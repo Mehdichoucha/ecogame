@@ -1,0 +1,298 @@
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+/// <summary>
+/// JEU JUST FIRE - VERSION PROPRE ET STABLE
+/// Utilisez les flèches pour suivre les séquences et éteindre le feu !
+/// </summary>
+public class JustFireGame : MonoBehaviour
+{
+    [Header("Gameplay Settings")]
+    public float fireLevel = 50f;
+    public float fireSpreadSpeed = 8f;
+    public float successReward = 20f;
+    public int sequenceLength = 4;
+    
+    [Header("Score")]
+    public int sequencesCompleted = 0;
+    public int mistakes = 0;
+    
+    // Variables internes
+    private float gameTimer = 60f;
+    private bool gameActive = true;
+    private string currentSequence = "";
+    private int currentPosition = 0;
+    private readonly string[] arrows = { "↑", "↓", "←", "→" };
+    private string currentMessage = "";
+    private float messageTimer = 0f;
+    
+    // Effets visuels
+    private float successEffectTimer = 0f;
+    private float errorEffectTimer = 0f;
+    private bool showStartScreen = true;
+    
+    // Input System
+    private Keyboard keyboard;
+    
+    // Audio
+    private JustFireAudio audioSystem;
+    
+    void Start()
+    {
+        keyboard = Keyboard.current;
+        audioSystem = GetComponent<JustFireAudio>();
+        
+        GenerateNewSequence();
+        Debug.Log("🔥 JUST FIRE - Jeu démarré !");
+        ShowMessage("🔥 SAUVEZ LA FORÊT ! Suivez les séquences !", 3f);
+    }
+    
+    void Update()
+    {
+        HandleInput();
+        
+        if (!gameActive) return;
+        
+        // Timer
+        gameTimer -= Time.deltaTime;
+        if (gameTimer <= 0)
+        {
+            EndGame(fireLevel < 100f, fireLevel < 100f ? "🎉 VICTOIRE !" : "⏰ TEMPS ÉCOULÉ !");
+            return;
+        }
+        
+        // Feu se propage
+        fireLevel += fireSpreadSpeed * Time.deltaTime;
+        fireLevel = Mathf.Clamp(fireLevel, 0f, 100f);
+        
+        // Game over si feu max
+        if (fireLevel >= 100f)
+        {
+            EndGame(false, "💥 LA FORÊT A BRÛLÉ !");
+            return;
+        }
+        
+        // Timers
+        if (messageTimer > 0) messageTimer -= Time.deltaTime;
+        if (successEffectTimer > 0) successEffectTimer -= Time.deltaTime;
+        if (errorEffectTimer > 0) errorEffectTimer -= Time.deltaTime;
+    }
+    
+    void HandleInput()
+    {
+        if (keyboard == null) keyboard = Keyboard.current;
+        if (keyboard == null) return;
+        
+        // R pour redémarrer
+        if (keyboard.rKey.wasPressedThisFrame) 
+        {
+            RestartGame();
+            return;
+        }
+        
+        // Écran d'accueil
+        if (showStartScreen)
+        {
+            if (keyboard.anyKey.wasPressedThisFrame)
+            {
+                showStartScreen = false;
+            }
+            return;
+        }
+        
+        if (!gameActive) return;
+        
+        string inputKey = "";
+        if (keyboard.upArrowKey.wasPressedThisFrame) inputKey = "↑";
+        else if (keyboard.downArrowKey.wasPressedThisFrame) inputKey = "↓";
+        else if (keyboard.leftArrowKey.wasPressedThisFrame) inputKey = "←";
+        else if (keyboard.rightArrowKey.wasPressedThisFrame) inputKey = "→";
+        
+        if (!string.IsNullOrEmpty(inputKey))
+        {
+            ProcessInput(inputKey);
+        }
+    }
+    
+    void ProcessInput(string inputKey)
+    {
+        string expected = GetExpectedKey();
+        
+        if (inputKey == expected)
+        {
+            currentPosition++;
+            if (audioSystem != null) audioSystem.PlaySuccessSound();
+            
+            if (currentPosition >= currentSequence.Length)
+            {
+                sequencesCompleted++;
+                fireLevel = Mathf.Max(0f, fireLevel - successReward);
+                ShowMessage($"✅ Séquence #{sequencesCompleted} réussie !", 2f);
+                successEffectTimer = 1f;
+                
+                if (audioSystem != null) audioSystem.PlaySequenceCompleteSound();
+                GenerateNewSequence();
+            }
+        }
+        else
+        {
+            mistakes++;
+            ShowMessage("❌ Mauvaise touche ! Recommencez", 2f);
+            errorEffectTimer = 1f;
+            currentPosition = 0;
+            
+            if (audioSystem != null) audioSystem.PlayErrorSound();
+        }
+    }
+    
+    void GenerateNewSequence()
+    {
+        currentSequence = "";
+        for (int i = 0; i < sequenceLength; i++)
+        {
+            currentSequence += arrows[Random.Range(0, arrows.Length)];
+        }
+        currentPosition = 0;
+        Debug.Log($"🆕 Nouvelle séquence: {currentSequence}");
+    }
+    
+    string GetExpectedKey()
+    {
+        if (currentPosition >= currentSequence.Length) return "";
+        return currentSequence[currentPosition].ToString();
+    }
+    
+    void ShowMessage(string message, float duration)
+    {
+        currentMessage = message;
+        messageTimer = duration;
+        Debug.Log(message);
+    }
+    
+    void EndGame(bool victory, string message)
+    {
+        gameActive = false;
+        ShowMessage(message, 5f);
+        
+        if (audioSystem != null) audioSystem.PlayGameOverSound(victory);
+        
+        Debug.Log($"🏁 Fin - {(victory ? "VICTOIRE" : "DÉFAITE")}");
+        Debug.Log($"📊 Séquences: {sequencesCompleted}, Erreurs: {mistakes}");
+        Debug.Log("💡 R pour rejouer !");
+    }
+    
+    void RestartGame()
+    {
+        gameActive = true;
+        gameTimer = 60f;
+        fireLevel = 50f;
+        sequencesCompleted = 0;
+        mistakes = 0;
+        currentPosition = 0;
+        showStartScreen = false;
+        successEffectTimer = 0f;
+        errorEffectTimer = 0f;
+        
+        GenerateNewSequence();
+        ShowMessage("🔄 Nouveau jeu !", 2f);
+        
+        if (audioSystem != null) audioSystem.PlayStartSound();
+        Debug.Log("🔄 Redémarré !");
+    }
+    
+    void OnGUI()
+    {
+        GUIStyle titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+        GUIStyle normalStyle = new GUIStyle(GUI.skin.label) { fontSize = 18, alignment = TextAnchor.MiddleLeft };
+        GUIStyle sequenceStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+        
+        // Écran d'accueil
+        if (showStartScreen)
+        {
+            GUI.color = Color.white;
+            GUI.Label(new Rect(Screen.width / 2 - 200, Screen.height / 2 - 100, 400, 50), "🔥 JUST FIRE 🔥", titleStyle);
+            GUI.Label(new Rect(Screen.width / 2 - 250, Screen.height / 2 - 50, 500, 30), "Sauvez la forêt avec les flèches !", normalStyle);
+            GUI.Label(new Rect(Screen.width / 2 - 150, Screen.height / 2, 300, 30), "Appuyez sur une touche", normalStyle);
+            return;
+        }
+        
+        // Interface principale
+        float topY = 20f;
+        
+        // Titre
+        GUI.color = Color.yellow;
+        GUI.Label(new Rect(Screen.width / 2 - 100, topY, 200, 40), "🔥 JUST FIRE", titleStyle);
+        
+        // Stats
+        GUI.color = gameTimer > 15f ? Color.white : Color.red;
+        GUI.Label(new Rect(20, topY + 50, 200, 30), $"⏰ {gameTimer:F1}s", normalStyle);
+        
+        GUI.color = Color.cyan;
+        GUI.Label(new Rect(20, topY + 80, 200, 30), $"🏆 Score: {sequencesCompleted}", normalStyle);
+        GUI.Label(new Rect(20, topY + 110, 200, 30), $"❌ Erreurs: {mistakes}", normalStyle);
+        
+        // Niveau de feu
+        GUI.color = fireLevel < 30f ? Color.green : fireLevel < 70f ? Color.yellow : Color.red;
+        GUI.Label(new Rect(20, topY + 150, 250, 30), $"🔥 Feu: {fireLevel:F1}%", normalStyle);
+        
+        // Barre de feu
+        Rect fireBarBg = new Rect(20, topY + 180, 300, 20);
+        Rect fireBarFill = new Rect(20, topY + 180, 300 * (fireLevel / 100f), 20);
+        
+        GUI.color = Color.black;
+        GUI.DrawTexture(fireBarBg, Texture2D.whiteTexture);
+        GUI.color = fireLevel < 50f ? Color.green : fireLevel < 80f ? Color.yellow : Color.red;
+        GUI.DrawTexture(fireBarFill, Texture2D.whiteTexture);
+        
+        // Séquence
+        if (!string.IsNullOrEmpty(currentSequence))
+        {
+            GUI.color = Color.white;
+            GUI.Label(new Rect(Screen.width / 2 - 150, Screen.height / 2 - 100, 300, 30), "Séquence:", normalStyle);
+            
+            float startX = Screen.width / 2 - (currentSequence.Length * 25);
+            for (int i = 0; i < currentSequence.Length; i++)
+            {
+                GUI.color = i < currentPosition ? Color.green : i == currentPosition ? Color.yellow : Color.white;
+                GUI.Label(new Rect(startX + i * 50, Screen.height / 2 - 50, 50, 50), currentSequence[i].ToString(), sequenceStyle);
+            }
+        }
+        
+        // Prochaine touche
+        if (gameActive && !string.IsNullOrEmpty(GetExpectedKey()))
+        {
+            GUI.color = Color.cyan;
+            GUI.Label(new Rect(Screen.width / 2 - 100, Screen.height / 2 + 20, 200, 30), $"Appuyez: {GetExpectedKey()}", normalStyle);
+        }
+        
+        // Messages
+        if (messageTimer > 0 && !string.IsNullOrEmpty(currentMessage))
+        {
+            GUI.color = currentMessage.Contains("✅") ? Color.green : currentMessage.Contains("❌") ? Color.red : Color.white;
+            GUI.Label(new Rect(Screen.width / 2 - 250, Screen.height - 100, 500, 30), currentMessage, normalStyle);
+        }
+        
+        // Effets
+        if (successEffectTimer > 0)
+        {
+            GUI.color = Color.green;
+            GUI.Label(new Rect(Screen.width / 2 - 25, Screen.height / 2 - 150, 50, 50), "✅", sequenceStyle);
+        }
+        
+        if (errorEffectTimer > 0)
+        {
+            GUI.color = Color.red;
+            GUI.Label(new Rect(Screen.width / 2 - 25, Screen.height / 2 - 150, 50, 50), "❌", sequenceStyle);
+        }
+        
+        // Instructions
+        GUI.color = Color.gray;
+        GUI.Label(new Rect(Screen.width - 120, Screen.height - 40, 110, 20), "R = Restart", new GUIStyle(GUI.skin.label) { fontSize = 12 });
+        
+        if (!gameActive)
+        {
+            GUI.color = fireLevel < 100f ? Color.green : Color.red;
+            GUI.Label(new Rect(Screen.width / 2 - 150, Screen.height / 2 + 100, 300, 50), "R pour rejouer", titleStyle);
+        }
+    }
+}
